@@ -31,7 +31,6 @@ package com.ea.agentloader;
 import com.sun.tools.attach.VirtualMachine;
 import com.sun.tools.attach.spi.AttachProvider;
 
-import java.lang.management.ManagementFactory;
 import java.lang.reflect.Constructor;
 import java.util.Locale;
 
@@ -41,6 +40,12 @@ import java.util.Locale;
  */
 public class AgentLoaderHotSpot
 {
+    private final String pid;
+
+    public AgentLoaderHotSpot(String pid) {
+        this.pid = pid;
+    }
+
     /**
      * Dynamically loads a java agent.
      * Deals with the problem of finding the proper jvm classes.
@@ -53,7 +58,7 @@ public class AgentLoaderHotSpot
     public void loadAgent(String agentJar, String options)
     {
 
-        VirtualMachine vm = getVirtualMachine();
+        VirtualMachine vm = getVirtualMachine(pid);
         if (vm == null)
         {
             throw new RuntimeException("Can't attach to this jvm. Add -javaagent:" + agentJar + " to the commandline");
@@ -75,12 +80,11 @@ public class AgentLoaderHotSpot
         }
     }
 
-    public static VirtualMachine getVirtualMachine()
+    public static VirtualMachine getVirtualMachine(String pid)
     {
         if (VirtualMachine.list().size() > 0)
         {
             // tools jar present
-            String pid = getPid();
             try
             {
                 return VirtualMachine.attach(pid);
@@ -101,7 +105,7 @@ public class AgentLoaderHotSpot
                 final AttachProviderPlaceHolder attachProvider = new AttachProviderPlaceHolder();
                 Constructor<VirtualMachine> vmConstructor = virtualMachineClass.getDeclaredConstructor(AttachProvider.class, String.class);
                 vmConstructor.setAccessible(true);
-                VirtualMachine newVM = vmConstructor.newInstance(attachProvider, getPid());
+                VirtualMachine newVM = vmConstructor.newInstance(attachProvider, pid);
                 return newVM;
             }
             catch (UnsatisfiedLinkError e)
@@ -116,19 +120,6 @@ public class AgentLoaderHotSpot
 
         // not a hotspot based virtual machine
         return null;
-    }
-
-
-    /**
-     * Gets the current jvm pid.
-     *
-     * @return the pid as String
-     */
-    public static String getPid()
-    {
-        String nameOfRunningVM = ManagementFactory.getRuntimeMXBean().getName();
-        int p = nameOfRunningVM.indexOf('@');
-        return nameOfRunningVM.substring(0, p);
     }
 
     /**

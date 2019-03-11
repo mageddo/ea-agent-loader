@@ -28,16 +28,16 @@
 
 package com.ea.agentloader;
 
+import com.ea.agentloader.loaders.AgentLoaderInterface;
+import com.ea.agentloader.loaders.AgentLoaderCurrentVM;
+import com.ea.agentloader.loaders.AgentLoaderRemote;
+import com.ea.agentloader.utils.VmUtils;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.management.ManagementFactory;
-import java.lang.reflect.Method;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -53,15 +53,6 @@ import java.util.jar.Manifest;
 public class AgentLoader
 {
     private volatile static AgentLoaderInterface agentLoader;
-
-    /**
-     * Internal class.
-     */
-    // used internally, has to be public to be accessible from the shadeClassLoaders
-    interface AgentLoaderInterface
-    {
-        void loadAgent(String agentJar, String options);
-    }
 
     /**
      * Dynamically loads a java agent.
@@ -151,106 +142,13 @@ public class AgentLoader
     @SuppressWarnings("unchecked")
     private synchronized static AgentLoaderInterface getAgentLoader(final String agentJar)
     {
-        if (agentLoader != null)
-        {
+        if (agentLoader != null) {
             return agentLoader;
         }
-        Class<AgentLoaderInterface> agentLoaderClass;
-        try
-        {
-            Class.forName("com.sun.tools.attach.VirtualMachine");
-            agentLoaderClass = (Class<AgentLoaderInterface>) Class.forName("com.ea.agentloader.AgentLoaderHotSpot");
+        if(JavaVersion.current().gte(JavaVersion.JAVA_9)){
+            return new AgentLoaderCurrentVM(VmUtils.getPid());
         }
-        catch (Exception ex)
-        {
-            // tools.jar not available in the class path
-            // so we load our own copy of those files
-            final List<String> shaded = Arrays.asList(
-                    "shaded/AttachProvider.class",
-                    "shaded/VirtualMachine.class",
-                    "AttachProviderPlaceHolder.class",
-                    "shaded/AgentInitializationException.class",
-                    "shaded/AgentLoadException.class",
-                    "shaded/AttachNotSupportedException.class",
-                    "shaded/AttachOperationFailedException.class",
-                    "shaded/AttachPermission.class",
-                    "shaded/HotSpotAttachProvider.class",
-                    "shaded/HotSpotVirtualMachine.class",
-                    "shaded/VirtualMachineDescriptor.class",
-
-                    "shaded/WindowsAttachProvider.class",
-                    "shaded/WindowsVirtualMachine.class",
-
-                    "shaded/SolarisAttachProvider.class",
-                    "shaded/SolarisVirtualMachine.class",
-
-                    "shaded/LinuxAttachProvider.class",
-                    "shaded/LinuxVirtualMachine.class",
-
-                    "shaded/BsdAttachProvider.class",
-                    "shaded/BsdVirtualMachine.class",
-
-                    "shaded/HotSpotAttachProvider$HotSpotVirtualMachineDescriptor.class",
-
-                    "shaded/BsdVirtualMachine$SocketInputStream.class",
-                    "shaded/LinuxVirtualMachine$SocketInputStream.class",
-                    "shaded/SolarisVirtualMachine$SocketInputStream.class",
-                    "shaded/WindowsVirtualMachine$PipedInputStream.class"
-            );
-            final ClassLoader systemLoader = ClassLoader.getSystemClassLoader();
-            List<Class<?>> classes = new ArrayList<>();
-            for (String s : shaded)
-            {
-                // have to load those class in the system class loader
-                // to prevent getting "Native Library .../libattach.so already loaded in another classloader"
-                // when the vm is used more than once.
-                try
-                {
-                    classes.add(ClassPathUtils.defineClass(systemLoader, AgentLoader.class.getResourceAsStream(s)));
-                }
-                catch (Exception e)
-                {
-                    throw new RuntimeException("Error defining: " + s, e);
-                }
-            }
-            try
-            {
-                agentLoaderClass = (Class<AgentLoaderInterface>) ClassPathUtils.defineClass(systemLoader, AgentLoader.class.getResourceAsStream("/com/ea/agentloader/AgentLoaderHotSpot.class"));
-            }
-            catch (Exception e)
-            {
-                throw new RuntimeException("Error loading AgentLoader implementation", e);
-            }
-        }
-        try
-        {
-            Object agentLoaderObject = agentLoaderClass.newInstance();
-
-            // the agent loader might be instantiated in another class loader
-            // so no interface it implements is guaranteed to be visible here.
-            // this reflection based implementation of this interface solves this problem.
-            agentLoader = new AgentLoaderInterface()
-            {
-                @Override
-                public void loadAgent(final String agentJar, final String options)
-                {
-                    try
-                    {
-                        final Method loadAgentMethod = agentLoaderObject.getClass().getMethod("loadAgent", String.class, String.class);
-                        loadAgentMethod.invoke(agentLoaderObject, agentJar, options);
-                    }
-                    catch (Exception e)
-                    {
-                        throw new RuntimeException(e);
-                    }
-                }
-            };
-        }
-        catch (Exception e)
-        {
-            throw new RuntimeException("Error getting agent loader implementation to load: " + agentJar, e);
-        }
-        return agentLoader;
+        return agentLoader = AgentLoaderRemote.newInstance(VmUtils.getPid());
     }
 
     /**
@@ -322,7 +220,6 @@ public class AgentLoader
         man.getMainAttributes().putValue("Can-Retransform-Classes", Boolean.toString(canRetransformClasses));
         man.getMainAttributes().putValue("Can-Set-Native-Method-Prefix", Boolean.toString(canSetNativeMethodPrefix));
         final JarOutputStream jarOut = new JarOutputStream(out, man);
-        jarOut.flush();
         jarOut.close();
     }
 

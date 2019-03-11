@@ -109,6 +109,8 @@
 
     <properties>
         <toolsjar>${java.home}/../lib/tools.jar</toolsjar>
+        <maven.compiler.source>1.6</maven.compiler.source>
+        <maven.compiler.target>1.6</maven.compiler.target>
     </properties>
 
     <profiles>
@@ -126,6 +128,12 @@
     </profiles>
 
     <dependencies>
+        <dependency>
+            <groupId>org.zeroturnaround</groupId>
+            <artifactId>zt-exec</artifactId>
+            <version>1.10</version>
+        </dependency>
+
         <dependency>
             <groupId>com.sun</groupId>
             <artifactId>tools</artifactId>
